@@ -2,14 +2,13 @@ import os
 import subprocess
 import sys
 
-from pydub import AudioSegment
-from moviepy.editor import AudioFileClip, VideoFileClip, \
-    concatenate_videoclips as concat_video, \
-    concatenate_audioclips as concat_audio
+import numpy as np
+from moviepy import concatenate_audioclips, concatenate_videoclips, VideoFileClip
+import soundfile as sf
 
-percent = .2  # percent of movie to keep    
-around = 20   # number of seconds around around the peaks
 
+percent = 0.2  # percent of movie to keep    
+around = 20    # number of seconds around peaks
 
 _tmp = 'extract_loud.wav'
 
@@ -24,25 +23,32 @@ def convert_to_wav(videofile):
 
 
 def find_loud(wavfile):
-    sound = AudioSegment.from_wav(wavfile)
+    # Read wav file using soundfile
+    sound, samplerate = sf.read(wavfile)
     msec = 1000
+    frame_length = int(samplerate * (msec / 1000))  # frames per msec
 
-    desired_len = percent * len(sound) / 1000
+    desired_len = percent * len(sound) / samplerate  # in seconds
     desired_peaks = int(desired_len / around) + 1
-    intervals = [(sound[i:i+msec].max_dBFS, i/1000) for i in range(0, len(sound), msec)]
+
+    # Calculate the max dBFS for each segment
+    intervals = []
+    for i in range(0, len(sound), frame_length):
+        segment = sound[i:i + frame_length]
+        max_db = 20 * np.log10(np.max(np.abs(segment)) + 1e-10)  # Avoid log(0)
+        intervals.append((max_db, i / samplerate))
 
     print('all intervals', intervals)
 
-    sorted_intervals = list(intervals)
-    sorted_intervals = sorted(sorted_intervals, key=lambda x: x[0])
+    sorted_intervals = sorted(intervals, key=lambda x: x[0])
 
     print('sorted intervals', sorted_intervals)
 
     keep = []
 
     for db, i in sorted_intervals:
-        start = max(0, i-int(around/2))
-        end = min(len(sorted_intervals)-1, i+int(around/2))
+        start = max(0, i - int(around / 2))
+        end = min(len(sound) / samplerate, i + int(around / 2))
         skip = False
         for intr in keep:
             if ((intr[0] >= start and intr[0] <= end) or
@@ -62,12 +68,15 @@ def find_loud(wavfile):
 
 
 def slice_loud(intervals, videofile, out):
-    vid, vclips, aclips = VideoFileClip(videofile), [], []
+    vid = VideoFileClip(videofile)
+    vclips, aclips = [], []
+    
+    # Extract audio clips for corresponding intervals
     for intr in intervals:
-        vclips.append(vid.subclip(*intr))
-        aclips.append(vid.audio.subclip(*intr))
+        vclips.append(vid.subclipped(*intr))
+        aclips.append(vid.audio.subclipped(*intr))
 
-    full = concat_video(vclips).set_audio(concat_audio(aclips))
+    full = concatenate_videoclips(vclips).with_audio(concatenate_audioclips(aclips))
     full.write_videofile(out,
                          codec='libx264',
                          audio_codec='aac',
