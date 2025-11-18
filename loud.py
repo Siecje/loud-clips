@@ -14,8 +14,10 @@ _tmp = 'extract_loud.wav'
 
 
 def convert_to_wav(videofile):
-    if os.path.isfile(_tmp):
+    try:
         os.remove(_tmp)
+    except FileNotFoundError:
+        pass
 
     cmd = 'ffmpeg -i %s -ab 160k -ac 2 -ar 44100 -vn %s' % (videofile, _tmp)
     subprocess.call(cmd, shell=True)
