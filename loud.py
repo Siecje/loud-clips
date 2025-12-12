@@ -2,8 +2,8 @@ import os
 import subprocess
 import sys
 
-import numpy as np
 from moviepy import concatenate_audioclips, concatenate_videoclips, VideoFileClip
+import numpy as np
 import soundfile as sf
 
 
@@ -19,8 +19,15 @@ def convert_to_wav(videofile):
     except FileNotFoundError:
         pass
 
-    cmd = 'ffmpeg -i %s -ab 160k -ac 2 -ar 44100 -vn %s' % (videofile, _tmp)
-    subprocess.call(cmd, shell=True)
+    cmd = [
+        'ffmpeg',
+        '-i', videofile,
+        '-ab', '160k',
+        '-ac', '2',
+        '-ar', '44100',
+        '-vn', _tmp
+    ]
+    subprocess.call(cmd)
     return _tmp
 
 
@@ -40,11 +47,7 @@ def find_loud(wavfile):
         max_db = 20 * np.log10(np.max(np.abs(segment)) + 1e-10)  # Avoid log(0)
         intervals.append((max_db, i / samplerate))
 
-    print('all intervals', intervals)
-
     sorted_intervals = sorted(intervals, key=lambda x: x[0])
-
-    print('sorted intervals', sorted_intervals)
 
     keep = []
 
@@ -64,8 +67,6 @@ def find_loud(wavfile):
             break
 
     keep = sorted(keep, key=lambda x: x[0])
-    print('keeping these intervals of the video:', keep)
-
     return keep
 
 
@@ -79,18 +80,19 @@ def slice_loud(intervals, videofile, out):
         aclips.append(vid.audio.subclipped(*intr))
 
     full = concatenate_videoclips(vclips).with_audio(concatenate_audioclips(aclips))
-    full.write_videofile(out,
-                         codec='libx264',
-                         audio_codec='aac',
-                         temp_audiofile='temp-audio.m4a',
-                         remove_temp=True)
+    full.write_videofile(
+        out,
+        codec='libx264',
+        audio_codec='aac',
+        temp_audiofile='temp-audio.m4a',
+        remove_temp=True,
+    )
 
 
 if __name__ == '__main__':
     wav = convert_to_wav(sys.argv[1])
     try:
         clips = find_loud(wav)
-        print('intervals', clips)
         slice_loud(clips, sys.argv[1], sys.argv[2])
     finally:
         os.remove(wav)
